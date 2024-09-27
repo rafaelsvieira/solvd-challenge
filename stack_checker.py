@@ -11,7 +11,8 @@ class CloudFormationStackChecker:
         self.debug = debug
 
         self.logger = logging.getLogger(__name__)
-        logging.getLogger('botocore').setLevel(logging.DEBUG if debug else logging.CRITICAL)
+        # Disable botocore logger
+        logging.getLogger('botocore').setLevel(logging.CRITICAL)
         logging.basicConfig(level=logging.DEBUG if debug else logging.INFO)
 
         self.logger.debug("Initializing CloudFormationStackChecker...")
@@ -66,6 +67,26 @@ class CloudFormationStackChecker:
             self.logger.error(f"Error fetching stack status: {str(e)}")
             return {"error": str(e)}
 
+    def get_failed_resource(self, stack_name):
+        try:
+            self.logger.debug(f"Fetching stack events for {stack_name}...")
+            events = self.cloudformation.describe_stack_events(StackName=stack_name)['StackEvents']
+
+            for event in events:
+                if 'ROLLBACK' in event['ResourceStatus']:
+                    self.logger.debug(f"Rollback triggered by resource: {event['LogicalResourceId']}")
+                    return {
+                        "ResourceName": event['LogicalResourceId'],
+                        "ResourceType": event['ResourceType'],
+                        "ErrorMessage": event.get('ResourceStatusReason', 'No error message')
+                    }
+
+            return None
+
+        except ClientError as e:
+            self.logger.error(f"Error fetching stack events: {str(e)}")
+            return {"error": str(e)}
+
     def run(self):
         self.logger.debug(f"Checking stack {self.stack_name}...")
         stack_status = self.get_stack_status()
@@ -74,6 +95,12 @@ class CloudFormationStackChecker:
             "StackName": self.stack_name,
             "StackStatus": stack_status
         }
+
+        if "ROLLBACK" in stack_status:
+            failed_resource = self.get_failed_resource(self.stack_name)
+
+            if failed_resource:
+                output["FailedResource"] = failed_resource
 
         print(json.dumps(output, indent=4))
 
