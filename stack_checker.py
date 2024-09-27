@@ -87,6 +87,21 @@ class CloudFormationStackChecker:
             self.logger.error(f"Error fetching stack events: {str(e)}")
             return {"error": str(e)}
 
+    def handle_nested_stack(self, nested_stack_name, previous_resource=None):
+        failed_resource = self.get_failed_resource(nested_stack_name)
+
+        if failed_resource and 'AWS::CloudFormation::Stack' in failed_resource['ResourceType']:
+            self.logger.debug(f"Handling nested stack: {nested_stack_name}")
+            if previous_resource == failed_resource['ResourceType']:
+                return failed_resource
+
+            nested_failed = self.handle_nested_stack(failed_resource['ResourceName'], failed_resource['ResourceType'])
+
+            if nested_failed:
+                return nested_failed
+
+        return failed_resource
+
     def run(self):
         self.logger.debug(f"Checking stack {self.stack_name}...")
         stack_status = self.get_stack_status()
@@ -100,6 +115,11 @@ class CloudFormationStackChecker:
             failed_resource = self.get_failed_resource(self.stack_name)
 
             if failed_resource:
+                if 'AWS::CloudFormation::Stack' in failed_resource['ResourceType']:
+                    nested_failed = self.handle_nested_stack(failed_resource['ResourceName'])
+                    if nested_failed:
+                        failed_resource['NestedStackError'] = nested_failed
+
                 output["FailedResource"] = failed_resource
 
         print(json.dumps(output, indent=4))
