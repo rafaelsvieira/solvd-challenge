@@ -3,6 +3,7 @@ import boto3
 import logging
 from botocore.exceptions import ClientError
 import argparse
+import json
 
 class CloudFormationStackChecker:
     def __init__(self, stack_name, debug=False):
@@ -54,8 +55,27 @@ class CloudFormationStackChecker:
             self.logger.error(f"Access check failed: {str(e)}")
             return False
 
+    def get_stack_status(self):
+        try:
+            self.logger.debug(f"Fetching stack status for {self.stack_name}...")
+            stack_info = self.cloudformation.describe_stacks(StackName=self.stack_name)
+            stack_status = stack_info['Stacks'][0]['StackStatus']
+            self.logger.debug(f"Stack status for {self.stack_name}: {stack_status}")
+            return stack_status
+        except ClientError as e:
+            self.logger.error(f"Error fetching stack status: {str(e)}")
+            return {"error": str(e)}
+
     def run(self):
-        pass
+        self.logger.debug(f"Checking stack {self.stack_name}...")
+        stack_status = self.get_stack_status()
+
+        output = {
+            "StackName": self.stack_name,
+            "StackStatus": stack_status
+        }
+
+        print(json.dumps(output, indent=4))
 
 def main():
     parser = argparse.ArgumentParser(description='AWS CloudFormation Stack Checker')
